@@ -1,0 +1,83 @@
+name: PHP Changelog (reusable)
+
+# Reusable workflow to (re)generate and commit CHANGELOG.md for a given release
+# version, independent of cutting a release. Mirrors the changelog half of
+# php-release.yml for repos that need to regenerate a changelog after the fact.
+#
+#   jobs:
+#     changelog:
+#       uses: myerscode/workflows/.github/workflows/php-changelog.yml@v1
+#       with:
+#         version: ${{ inputs.version }}
+#       secrets:
+#         PAT: ${{ secrets.PAT }}
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release version to regenerate the changelog for.'
+        type: string
+        required: true
+      default-branch:
+        description: 'Branch to read tags from and commit the CHANGELOG to.'
+        type: string
+        default: 'main'
+      exclude-types:
+        description: 'Conventional-commit types excluded from the changelog.'
+        type: string
+        default: 'build,docs,other,style,ci,chore'
+    secrets:
+      PAT:
+        description: 'Optional PAT so the commit bypasses branch protection / fires downstream workflows.'
+        required: false
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.default-branch }}
+          fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Get previous tag
+        id: previous
+        env:
+          CURRENT: ${{ inputs.version }}
+        run: |
+          PREVIOUS=$(git tag --list --sort=-version:refname '[0-9]*' | grep -v "^${CURRENT}$" | head -1)
+          if [ -n "$PREVIOUS" ]; then
+            echo "tag=$PREVIOUS" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No previous tag found; nothing to generate."
+          fi
+
+      - name: Generate changelog
+        if: steps.previous.outputs.found == 'true'
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          fromTag: ${{ inputs.version }}
+          toTag: ${{ steps.previous.outputs.tag }}
+          excludeTypes: ${{ inputs.exclude-types }}
+          useGitmojis: false
+          writeToFile: true
+
+      - name: Commit updated CHANGELOG
+        if: steps.previous.outputs.found == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          branch: ${{ inputs.default-branch }}
+          commit_message: "docs: update CHANGELOG for ${{ inputs.version }}"
+          file_pattern: CHANGELOG.md

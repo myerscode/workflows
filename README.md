@@ -13,6 +13,8 @@ Write CI once here, call it everywhere. Each workflow is a [reusable workflow](h
 | Lint & Analyse | `.github/workflows/php-lint.yml` | Pint (code style) + PHPStan (static analysis) |
 | Security Audit | `.github/workflows/php-security-audit.yml` | `composer audit` |
 | Code Coverage | `.github/workflows/php-coverage.yml` | PHPUnit coverage + Codecov upload |
+| PHP Release | `.github/workflows/php-release.yml` | Tag, changelog, GitHub release + CHANGELOG commit (CalVer or SemVer) |
+| PHP Changelog | `.github/workflows/php-changelog.yml` | Regenerate + commit CHANGELOG.md for a version on demand |
 
 ## Usage
 

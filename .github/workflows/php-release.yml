@@ -1,0 +1,161 @@
+name: PHP Release (reusable)
+
+# Reusable release workflow for myerscode PHP packages: validates the version,
+# tags it, generates a changelog from conventional commits, creates the GitHub
+# release, and commits the updated CHANGELOG back to the default branch.
+#
+# Supports CalVer (YYYY.MINOR.PATCH) and SemVer (MAJOR.MINOR.PATCH).
+#
+# The CALLER owns the triggers (workflow_dispatch inputs and/or a tag push) and
+# passes them through. Example consumer in examples/consumer-php-release.yml.
+#
+#   jobs:
+#     release:
+#       uses: myerscode/workflows/.github/workflows/php-release.yml@v1
+#       with:
+#         version: ${{ inputs.version }}
+#         scheme: ${{ inputs.scheme }}
+#       secrets:
+#         # Optional. A PAT lets the release commit bypass branch protection and
+#         # trigger downstream workflows; omit to fall back to GITHUB_TOKEN.
+#         PAT: ${{ secrets.PAT }}
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to release, or empty to derive from a pushed tag.'
+        type: string
+        default: ''
+      scheme:
+        description: 'Version scheme: calver or semver. Auto-detected for a tag push.'
+        type: string
+        default: 'calver'
+      default-branch:
+        description: 'Branch to tag from and commit the CHANGELOG to.'
+        type: string
+        default: 'main'
+      exclude-types:
+        description: 'Conventional-commit types excluded from the changelog.'
+        type: string
+        default: 'build,docs,other,style,ci,chore'
+    secrets:
+      PAT:
+        description: 'Optional PAT so release commits bypass branch protection / fire downstream workflows.'
+        required: false
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.default-branch }}
+          fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Determine version and scheme
+        id: version
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_SCHEME: ${{ inputs.scheme }}
+        run: |
+          if [ -n "$IN_VERSION" ]; then
+            TAG="$IN_VERSION"
+            SCHEME="$IN_SCHEME"
+          else
+            # Derive from the pushed tag ref; auto-detect scheme.
+            TAG="${GITHUB_REF_NAME}"
+            if echo "$TAG" | grep -qE '^[0-9]{4}\.[0-9]+\.[0-9]+$'; then
+              SCHEME="calver"
+            else
+              SCHEME="semver"
+            fi
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+
+      - name: Validate version format
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SCHEME: ${{ steps.version.outputs.scheme }}
+        run: |
+          if [ "$SCHEME" = "calver" ]; then
+            if ! echo "$TAG" | grep -qE '^[0-9]{4}\.[0-9]+\.[0-9]+$'; then
+              echo "Error: Version must be CalVer YYYY.MINOR.PATCH (e.g. 2026.0.0)"; exit 1
+            fi
+          else
+            if ! echo "$TAG" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Error: Version must be SemVer MAJOR.MINOR.PATCH (e.g. 1.2.3)"; exit 1
+            fi
+          fi
+
+      - name: Create and push tag
+        # Only when invoked with an explicit version (dispatch); a tag push
+        # already created the tag.
+        if: inputs.version != ''
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Get previous tag
+        id: previous
+        env:
+          CURRENT: ${{ steps.version.outputs.tag }}
+        run: |
+          PREVIOUS=$(git tag --list --sort=-version:refname '[0-9]*' | grep -v "^${CURRENT}$" | head -1)
+          if [ -n "$PREVIOUS" ]; then
+            echo "tag=$PREVIOUS" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate changelog
+        if: steps.previous.outputs.found == 'true'
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          fromTag: ${{ steps.version.outputs.tag }}
+          toTag: ${{ steps.previous.outputs.tag }}
+          excludeTypes: ${{ inputs.exclude-types }}
+          useGitmojis: false
+          writeToFile: false
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: ${{ steps.changelog.outputs.changes || 'Initial release' }}
+
+      - name: Write changelog to file
+        if: steps.previous.outputs.found == 'true'
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          fromTag: ${{ steps.version.outputs.tag }}
+          toTag: ${{ steps.previous.outputs.tag }}
+          excludeTypes: ${{ inputs.exclude-types }}
+          useGitmojis: false
+          writeToFile: true
+
+      - name: Commit updated CHANGELOG
+        if: steps.previous.outputs.found == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          branch: ${{ inputs.default-branch }}
+          commit_message: "docs: update CHANGELOG for ${{ steps.version.outputs.tag }}"
+          file_pattern: CHANGELOG.md
