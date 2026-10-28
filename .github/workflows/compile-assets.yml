@@ -1,0 +1,62 @@
+name: Compile Assets (reusable)
+
+# Installs npm deps, runs a build script, and commits the compiled output.
+# For the sites (dnsrecords.page, gitstats.dev, myerscode.com, ...).
+#
+#   jobs:
+#     assets:
+#       uses: myerscode/workflows/.github/workflows/compile-assets.yml@v1
+#       with:
+#         build-command: production
+#         build-path: public/
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: 'lts/*'
+      build-command:
+        description: 'npm script to run (npm run <build-command>).'
+        type: string
+        default: 'production'
+      build-path:
+        description: 'Path whose compiled output is committed.'
+        type: string
+        default: 'public/'
+      commit-message:
+        type: string
+        default: 'chore: compile assets'
+    secrets:
+      PAT:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile assets
+        run: npm run ${{ inputs.build-command }}
+
+      - name: Commit compiled files
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: ${{ inputs.commit-message }}
+          file_pattern: ${{ inputs.build-path }}

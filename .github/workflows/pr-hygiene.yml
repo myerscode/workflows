@@ -1,0 +1,117 @@
+name: PR Hygiene (reusable)
+
+# Nudges external-contributor PRs that are not review-ready:
+#   - draft PRs get a comment explaining drafts are not reviewed;
+#   - PRs without maintainer-edit access get a comment and are closed.
+# PRs opened from within the org are always skipped.
+#
+# Optimised from the original two-job version: a single job makes ONE GraphQL
+# request for all the PR fields and branches on them, instead of two jobs each
+# issuing their own query.
+#
+# Credit: github/docs notify-when-maintainers-cannot-edit workflow.
+#
+#   on:
+#     pull_request_target:
+#       types: [opened, reopened, ready_for_review, converted_to_draft]
+#   jobs:
+#     hygiene:
+#       uses: myerscode/workflows/.github/workflows/pr-hygiene.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Org login whose own PRs are exempt.'
+        type: string
+        default: 'myerscode'
+      close-uneditable:
+        description: 'Close PRs that lack maintainer-edit access.'
+        type: boolean
+        default: true
+      draft-message:
+        type: string
+        default: >-
+          Thanks for submitting a PR!
+
+
+          Draft PRs are not reviewed. If you would like a review, mark your pull
+          request as ready for review. PRs left in draft may be closed due to
+          inactivity.
+      uneditable-message:
+        type: string
+        default: >-
+          Thanks for submitting a PR!
+
+
+          To review and merge PRs efficiently we require maintainer edit access.
+          See the GitHub docs on allowing changes to a PR branch from a fork.
+          GitHub does not allow maintainer permissions on PRs from organization
+          accounts — please resubmit from a personal account with maintainer
+          edits enabled.
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          ORG: ${{ inputs.org }}
+          CLOSE_UNEDITABLE: ${{ inputs.close-uneditable }}
+          DRAFT_MESSAGE: ${{ inputs.draft-message }}
+          UNEDITABLE_MESSAGE: ${{ inputs.uneditable-message }}
+        with:
+          script: |
+            const org = process.env.ORG;
+            const repo = context.repo.repo;
+            const number = context.issue.number;
+
+            // One query for everything the checks need.
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    headRepositoryOwner { login }
+                    isDraft
+                    maintainerCanModify
+                    state
+                  }
+                }
+              }`;
+            const { repository } = await github.graphql(query, {
+              owner: org, repo, number,
+            });
+            const pr = repository.pullRequest;
+
+            if (pr.headRepositoryOwner.login === org) {
+              console.log('PR owned by the org — skipping.');
+              return;
+            }
+            if (pr.state !== 'OPEN') {
+              console.log('PR is not open — skipping.');
+              return;
+            }
+
+            const comment = (body) => github.rest.issues.createComment({
+              owner: org, repo, issue_number: number, body,
+            });
+
+            if (pr.isDraft) {
+              console.log('External draft PR — commenting.');
+              await comment(process.env.DRAFT_MESSAGE);
+            }
+
+            if (!pr.maintainerCanModify) {
+              console.log('External PR without maintainer edit access.');
+              await comment(process.env.UNEDITABLE_MESSAGE);
+              if (process.env.CLOSE_UNEDITABLE === 'true') {
+                await github.rest.pulls.update({
+                  owner: org, repo, pull_number: number, state: 'closed',
+                });
+              }
+            }

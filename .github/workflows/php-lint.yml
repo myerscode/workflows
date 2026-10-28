@@ -1,10 +1,16 @@
 name: Lint & Analyse (reusable)
 
-# Reusable Pint (lint) + PHPStan (static analysis) workflow.
+# Reusable Pint (code style) + PHPStan (static analysis) workflow with two modes:
+#
+#   fix: false (default) — CI check: `pint --test` + PHPStan, writes nothing.
+#                          Use on pull_request / push.
+#   fix: true            — auto-fix: runs Pint, commits the fixes back, then
+#                          PHPStan. Use on a manual dispatch or a schedule.
 #
 #   jobs:
 #     quality:
 #       uses: myerscode/workflows/.github/workflows/php-lint.yml@v1
+#       # with: { fix: true }   # to auto-fix and commit
 
 on:
   workflow_call:
@@ -21,17 +27,29 @@ on:
         description: 'Flags passed to composer install.'
         type: string
         default: '--prefer-dist --no-progress --no-interaction'
-      lint-command:
-        description: 'Pint command. Use --test to fail without writing changes.'
-        type: string
-        default: 'vendor/bin/pint --test'
+      fix:
+        description: 'true = fix code style and commit; false = check only.'
+        type: boolean
+        default: false
+      analyse:
+        description: 'Run PHPStan static analysis as well as Pint.'
+        type: boolean
+        default: true
       analyse-command:
         description: 'PHPStan command.'
         type: string
         default: 'vendor/bin/phpstan analyse --no-progress'
+      commit-message:
+        description: 'Commit message used when fix=true.'
+        type: string
+        default: 'style: fix code styling'
+    secrets:
+      PAT:
+        description: 'Optional PAT so the fix commit can trigger downstream workflows.'
+        required: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -40,14 +58,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ inputs.php-version }}
           extensions: ${{ inputs.extensions }}
+          tools: composer:v2
+          coverage: none
+
+      # Cache Composer's global package cache to speed repeated runs.
+      - name: Get Composer cache dir
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json', '**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
       - name: Install dependencies
         run: composer install ${{ inputs.composer-flags }}
+
       - name: Check code style (Pint)
-        run: ${{ inputs.lint-command }}
+        if: ${{ !inputs.fix }}
+        run: vendor/bin/pint --test
+
+      - name: Fix code style (Pint)
+        if: ${{ inputs.fix }}
+        run: vendor/bin/pint
+
+      - name: Commit style fixes
+        if: ${{ inputs.fix }}
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: ${{ inputs.commit-message }}
+
       - name: Static analysis (PHPStan)
+        if: ${{ inputs.analyse }}
         run: ${{ inputs.analyse-command }}

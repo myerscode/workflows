@@ -1,0 +1,64 @@
+name: Normalize composer.json (reusable)
+
+# Runs composer-normalize across every composer.json (excluding vendor) and,
+# when fix=true, commits the result.
+#
+#   jobs:
+#     normalize:
+#       uses: myerscode/workflows/.github/workflows/composer-normalize.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        type: string
+        default: '8.5'
+      extensions:
+        type: string
+        default: 'ctype, iconv, json, mbstring'
+      fix:
+        description: 'true = normalize and commit; false = check only (CI gate).'
+        type: boolean
+        default: true
+      commit-message:
+        type: string
+        default: 'style: normalize composer.json'
+    secrets:
+      PAT:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: ${{ inputs.extensions }}
+          tools: composer:v2, composer-normalize
+          coverage: none
+
+      - name: Normalize every composer.json
+        env:
+          DRY: ${{ inputs.fix && ' ' || '--dry-run' }}
+        run: |
+          # In check mode (fix=false) run --dry-run so a non-normalized file
+          # fails the job instead of being silently rewritten.
+          find . -path "*/vendor" -prune -o -name "composer.json" -print \
+            -exec composer normalize $DRY {} \;
+
+      - name: Commit normalized files
+        if: ${{ inputs.fix }}
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: ${{ inputs.commit-message }}
+          file_pattern: '**/composer.json'

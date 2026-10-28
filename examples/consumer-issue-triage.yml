@@ -1,0 +1,16 @@
+# Copy into a repo as `.github/workflows/issue-triage.yml`.
+
+name: Issue Triage
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+jobs:
+  triage:
+    uses: myerscode/workflows/.github/workflows/issue-triage.yml@v1
+    # with:
+    #   label: "help wanted"

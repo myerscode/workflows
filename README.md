@@ -10,11 +10,15 @@ Write CI once here, call it everywhere. Each workflow is a [reusable workflow](h
 |----------|------|---------|
 | Dependabot Auto-merge | `.github/workflows/dependabot-auto-merge.yml` | Approve + auto-merge Dependabot PRs when checks pass and there are no conflicts |
 | PHP Tests | `.github/workflows/php-tests.yml` | PHPUnit across an OS + PHP-version matrix |
-| Lint & Analyse | `.github/workflows/php-lint.yml` | Pint (code style) + PHPStan (static analysis) |
+| Lint & Analyse | `.github/workflows/php-lint.yml` | Pint + PHPStan; `fix: true` auto-fixes and commits |
 | Security Audit | `.github/workflows/php-security-audit.yml` | `composer audit` |
 | Code Coverage | `.github/workflows/php-coverage.yml` | PHPUnit coverage + Codecov upload |
 | PHP Release | `.github/workflows/php-release.yml` | Tag, changelog, GitHub release + CHANGELOG commit (CalVer or SemVer) |
 | PHP Changelog | `.github/workflows/php-changelog.yml` | Regenerate + commit CHANGELOG.md for a version on demand |
+| Composer Normalize | `.github/workflows/composer-normalize.yml` | `composer normalize` all composer.json (check or fix+commit) |
+| Compile Assets | `.github/workflows/compile-assets.yml` | npm build + commit compiled assets (for the sites) |
+| PR Hygiene | `.github/workflows/pr-hygiene.yml` | Nudge external draft / non-editable PRs; close uneditable ones |
+| Issue Triage | `.github/workflows/issue-triage.yml` | Comment on issues when a label (e.g. `help wanted`) is applied |
 
 ## Usage
 

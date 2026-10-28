@@ -1,0 +1,45 @@
+name: Issue Triage (reusable)
+
+# Comments on issues when a configurable label is applied (default:
+# "help wanted"), e.g. to invite community contributions.
+#
+#   on:
+#     issues:
+#       types: [labeled]
+#   jobs:
+#     triage:
+#       uses: myerscode/workflows/.github/workflows/issue-triage.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        description: 'Label that triggers the comment.'
+        type: string
+        default: 'help wanted'
+      message:
+        type: string
+        default: >-
+          Thank you for reporting this issue!
+
+
+          As an open source project we rely on the community to help diagnose
+          and fix issues. If you can, please open a pull request fixing the
+          issue along with tests — all PRs are promptly reviewed.
+
+
+          Thank you!
+
+permissions:
+  issues: write
+
+jobs:
+  comment:
+    if: github.event.label.name == inputs.label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: ${{ inputs.message }}

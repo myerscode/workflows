@@ -1,0 +1,27 @@
+# Copy into a repo as `.github/workflows/maintenance.yml`.
+# On-demand housekeeping: normalize composer.json and (optionally) auto-fix
+# code style and commit the results.
+
+name: Maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"   # weekly, Monday 03:00
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    uses: myerscode/workflows/.github/workflows/composer-normalize.yml@v1
+    secrets:
+      PAT: ${{ secrets.PAT }}
+
+  style:
+    uses: myerscode/workflows/.github/workflows/php-lint.yml@v1
+    with:
+      fix: true
+      analyse: false
+    secrets:
+      PAT: ${{ secrets.PAT }}
