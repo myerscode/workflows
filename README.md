@@ -63,6 +63,11 @@ Only **one** run proceeds at a time per repo (shared concurrency group,
 `cancel-in-progress: false`): if several Dependabot PRs open at once they are
 processed serially and none are dropped.
 
+Grouped (multi-dependency) PRs are handled: Dependabot leaves `update-type`
+empty for a group, so the gate reads `updated-dependencies-json` and judges the
+PR by the **highest** bump in the group (e.g. a group containing a major bump
+is blocked under `highest-auto-merge: minor`). An unparsable group fails closed.
+
 The caller **must** trigger on `pull_request_target` — see
 [`examples/consumer-dependabot-auto-merge.yml`](examples/consumer-dependabot-auto-merge.yml).
 Dependabot's `pull_request` token is read-only and has no secret access, so it

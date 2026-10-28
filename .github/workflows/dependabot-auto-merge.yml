@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -73,20 +73,45 @@ jobs:
         id: gate
         env:
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          UPDATED_DEPS: ${{ steps.metadata.outputs.updated-dependencies-json }}
           HIGHEST: ${{ inputs.highest-auto-merge }}
         run: |
+          # Rank of the highest bump we are allowed to auto-merge.
           case "$HIGHEST" in
-            patch) allowed="version-update:semver-patch" ;;
-            minor) allowed="version-update:semver-patch version-update:semver-minor" ;;
-            major) allowed="version-update:semver-patch version-update:semver-minor version-update:semver-major" ;;
+            patch) cap=1 ;;
+            minor) cap=2 ;;
+            major) cap=3 ;;
             *) echo "Invalid highest-auto-merge: $HIGHEST" >&2; exit 1 ;;
           esac
-          eligible=false
-          for a in $allowed; do
-            if [ "$UPDATE_TYPE" = "$a" ]; then eligible=true; break; fi
-          done
+
+          rank() {
+            case "$1" in
+              version-update:semver-patch) echo 1 ;;
+              version-update:semver-minor) echo 2 ;;
+              version-update:semver-major) echo 3 ;;
+              *) echo 99 ;;  # unknown / direct-dependency updates -> never auto-merge
+            esac
+          }
+
+          # Single-dependency PRs expose update-type directly. Grouped PRs leave
+          # it empty and instead list every bump in updated-dependencies-json;
+          # for those, take the HIGHEST bump across the group.
+          if [ -n "$UPDATE_TYPE" ]; then
+            highest_rank=$(rank "$UPDATE_TYPE")
+            detail="$UPDATE_TYPE"
+          else
+            highest_rank=0
+            while IFS= read -r t; do
+              r=$(rank "$t")
+              [ "$r" -gt "$highest_rank" ] && highest_rank=$r
+            done <<< "$(echo "${UPDATED_DEPS:-[]}" | jq -r '.[].updateType // empty')"
+            [ "$highest_rank" -eq 0 ] && highest_rank=99   # no parsable types -> fail closed
+            detail="grouped (highest rank $highest_rank)"
+          fi
+
+          if [ "$highest_rank" -le "$cap" ]; then eligible=true; else eligible=false; fi
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          echo "Update type '$UPDATE_TYPE' eligible under '$HIGHEST': $eligible"
+          echo "Update '$detail' (rank $highest_rank) eligible under '$HIGHEST' (cap $cap): $eligible"
 
       - name: Approve the pull request
         if: steps.gate.outputs.eligible == 'true' && inputs.approve
