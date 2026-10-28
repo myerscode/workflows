@@ -85,6 +85,7 @@ Repo prerequisites:
 | `highest-auto-merge` | `minor` | `patch`, `minor`, or `major`. Caps the semver bump that may auto-merge |
 | `approve` | `true` | Also submit an approving review |
 | `resolve-conflicts` | `recreate` | How to unstick a PR that can't merge: `rebase` (fix behind only), `recreate` (also rebuild a conflicted branch), or `off` |
+| `ignore-indirect` | `true` | Judge the semver cap against **direct** dependencies only, so a transitive (indirect) major pulled in alongside a direct minor/patch does not block auto-merge. `false` counts any bump |
 
 ### Handling stuck PRs
 

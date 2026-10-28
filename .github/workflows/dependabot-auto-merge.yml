@@ -55,6 +55,16 @@ on:
           off      -> do nothing; leave stuck PRs alone.
         type: string
         default: 'recreate'
+      ignore-indirect:
+        description: >-
+          When true (default), judge the semver cap against DIRECT dependencies
+          only. Dependabot often pulls a transitive (indirect) dependency to a
+          new major as an ancestor of a direct minor/patch bump; with this on,
+          that indirect major does not block auto-merge — only the versions you
+          directly depend on count. Set false to let any bump, direct or
+          indirect, count toward the cap.
+        type: boolean
+        default: true
 
 # Single-instance guarantee: all Dependabot auto-merge runs for a given repo
 # share one concurrency group and queue rather than cancel, so simultaneously
@@ -85,6 +95,7 @@ jobs:
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
           UPDATED_DEPS: ${{ steps.metadata.outputs.updated-dependencies-json }}
           HIGHEST: ${{ inputs.highest-auto-merge }}
+          IGNORE_INDIRECT: ${{ inputs.ignore-indirect }}
         run: |
           # Rank of the highest bump we are allowed to auto-merge.
           case "$HIGHEST" in
@@ -99,24 +110,43 @@ jobs:
               version-update:semver-patch) echo 1 ;;
               version-update:semver-minor) echo 2 ;;
               version-update:semver-major) echo 3 ;;
-              *) echo 99 ;;  # unknown / direct-dependency updates -> never auto-merge
+              *) echo 99 ;;  # unknown -> never auto-merge (fail closed)
             esac
           }
 
-          # Single-dependency PRs expose update-type directly. Grouped PRs leave
-          # it empty and instead list every bump in updated-dependencies-json;
-          # for those, take the HIGHEST bump across the group.
-          if [ -n "$UPDATE_TYPE" ]; then
-            highest_rank=$(rank "$UPDATE_TYPE")
-            detail="$UPDATE_TYPE"
-          else
+          deps="${UPDATED_DEPS:-[]}"
+          if [ "$(echo "$deps" | jq 'length')" -gt 0 ]; then
+            # Prefer the structured per-dependency list — it is type-aware and
+            # covers both single and grouped PRs. Optionally drop indirect deps
+            # so a transitive major riding along with a direct minor/patch does
+            # not block auto-merge.
+            if [ "$IGNORE_INDIRECT" = "true" ]; then
+              filter='[.[] | select(.dependencyType | startswith("direct"))]'
+              scope="direct deps"
+            else
+              filter='.'
+              scope="all deps"
+            fi
+            considered=$(echo "$deps" | jq -c "$filter")
+            n=$(echo "$considered" | jq 'length')
+            if [ "$n" -eq 0 ]; then
+              # ignore-indirect removed everything (all deps indirect): the PR
+              # only moves transitive deps — judge by their highest bump instead
+              # of failing closed.
+              considered=$(echo "$deps" | jq -c '.')
+              scope="all deps (no direct present)"
+            fi
             highest_rank=0
             while IFS= read -r t; do
               r=$(rank "$t")
               [ "$r" -gt "$highest_rank" ] && highest_rank=$r
-            done <<< "$(echo "${UPDATED_DEPS:-[]}" | jq -r '.[].updateType // empty')"
-            [ "$highest_rank" -eq 0 ] && highest_rank=99   # no parsable types -> fail closed
-            detail="grouped (highest rank $highest_rank)"
+            done <<< "$(echo "$considered" | jq -r '.[].updateType // empty')"
+            [ "$highest_rank" -eq 0 ] && highest_rank=99
+            detail="$scope (highest rank $highest_rank)"
+          else
+            # No structured list (older metadata) — fall back to update-type.
+            highest_rank=$(rank "$UPDATE_TYPE")
+            detail="${UPDATE_TYPE:-unknown}"
           fi
 
           if [ "$highest_rank" -le "$cap" ]; then eligible=true; else eligible=false; fi

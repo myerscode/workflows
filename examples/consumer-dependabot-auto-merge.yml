@@ -28,3 +28,4 @@ jobs:
       highest-auto-merge: minor   # patch | minor | major
       approve: true
       resolve-conflicts: recreate # rebase | recreate | off
+      ignore-indirect: true       # direct-dep majors still block; indirect ones do not
