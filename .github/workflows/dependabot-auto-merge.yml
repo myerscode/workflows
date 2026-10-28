@@ -45,6 +45,16 @@ on:
         description: 'Whether to also submit an approving review.'
         type: boolean
         default: true
+      resolve-conflicts:
+        description: >-
+          How to handle a PR that cannot merge as-is:
+          rebase   -> ask Dependabot to rebase (fixes a behind branch; a true
+                      conflict stays dirty and is left for a human).
+          recreate -> rebase when behind, and rebuild the branch from scratch
+                      when dirty (discards any manual commits on the PR branch).
+          off      -> do nothing; leave stuck PRs alone.
+        type: string
+        default: 'recreate'
 
 # Single-instance guarantee: all Dependabot auto-merge runs for a given repo
 # share one concurrency group and queue rather than cancel, so simultaneously
@@ -127,3 +137,49 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           METHOD: ${{ inputs.merge-method }}
         run: gh pr merge --auto --"$METHOD" "$PR_URL"
+
+      - name: Resolve a stuck (behind or conflicted) PR
+        # Runs for eligible PRs even once auto-merge is armed: --auto completes
+        # only after the branch is up to date and conflict-free, so a BEHIND or
+        # DIRTY branch must be refreshed by Dependabot for the merge to land.
+        if: steps.gate.outputs.eligible == 'true' && inputs.resolve-conflicts != 'off'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STRATEGY: ${{ inputs.resolve-conflicts }}
+        run: |
+          # mergeStateStatus is computed lazily; poll briefly until it resolves.
+          state=""
+          for i in 1 2 3 4 5; do
+            state=$(gh pr view "$PR_NUMBER" --json mergeStateStatus -q .mergeStateStatus)
+            [ "$state" != "UNKNOWN" ] && break
+            echo "mergeStateStatus UNKNOWN, waiting... ($i)"; sleep 5
+          done
+          echo "mergeStateStatus=$state"
+
+          case "$state" in
+            BEHIND)
+              # Base moved ahead; a rebase brings the branch current.
+              echo "Branch is behind base - asking Dependabot to rebase."
+              gh pr comment "$PR_URL" --body "@dependabot rebase"
+              ;;
+            DIRTY)
+              # True merge conflict. rebase cannot fix it; recreate rebuilds the
+              # branch from scratch (only safe on Dependabot-owned branches).
+              if [ "$STRATEGY" = "recreate" ]; then
+                echo "Branch is dirty - asking Dependabot to recreate."
+                gh pr comment "$PR_URL" --body "@dependabot recreate"
+              else
+                echo "Branch is dirty and resolve-conflicts=rebase; leaving for a human."
+                gh pr comment "$PR_URL" --body \
+                  "This PR has merge conflicts Dependabot cannot auto-resolve. Comment \`@dependabot recreate\` to rebuild it, or resolve manually."
+              fi
+              ;;
+            CLEAN|HAS_HOOKS|UNSTABLE|BLOCKED)
+              echo "State '$state' needs no rebase; auto-merge will proceed once checks settle."
+              ;;
+            *)
+              echo "State '$state' - no action taken."
+              ;;
+          esac

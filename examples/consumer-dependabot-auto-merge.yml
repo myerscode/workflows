@@ -27,3 +27,4 @@ jobs:
       merge-method: squash
       highest-auto-merge: minor   # patch | minor | major
       approve: true
+      resolve-conflicts: recreate # rebase | recreate | off

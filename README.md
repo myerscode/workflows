@@ -84,6 +84,34 @@ Repo prerequisites:
 | `merge-method` | `squash` | `merge`, `squash`, or `rebase` |
 | `highest-auto-merge` | `minor` | `patch`, `minor`, or `major`. Caps the semver bump that may auto-merge |
 | `approve` | `true` | Also submit an approving review |
+| `resolve-conflicts` | `recreate` | How to unstick a PR that can't merge: `rebase` (fix behind only), `recreate` (also rebuild a conflicted branch), or `off` |
+
+### Handling stuck PRs
+
+`--auto` completes a merge only once the branch is up to date and conflict-free.
+When a PR falls behind `main` or conflicts (common when several Dependabot PRs
+touch the same lockfile), the workflow reads its merge state and nudges
+Dependabot:
+
+- **behind** → comments `@dependabot rebase`
+- **conflicted** → comments `@dependabot recreate` (rebuilds the branch;
+  `resolve-conflicts: rebase` instead leaves a note for a human)
+
+To nudge PRs that are already stuck (outside a fresh workflow run), run:
+
+```bash
+scripts/kick-stuck-prs.sh myerscode/<repo>
+```
+
+### Adding the workflow to another repo
+
+```bash
+scripts/add-auto-merge.sh myerscode/<repo> v1   # use develop while testing
+```
+
+It clones the repo, writes the caller workflow (and a starter `dependabot.yml`
+if none exists), stages the change, and prints the signed-commit + PR commands
+to run. It never commits or pushes to a protected branch for you.
 
 ### `php-tests.yml`
 | Input | Default |
