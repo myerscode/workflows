@@ -1,0 +1,61 @@
+name: PHP Tests (reusable)
+
+# Reusable test workflow for myerscode PHP packages.
+# Call it from a consumer repo with:
+#
+#   jobs:
+#     tests:
+#       uses: myerscode/workflows/.github/workflows/php-tests.yml@v1
+#       with:
+#         php-versions: "['8.5']"
+#         os: "['ubuntu-latest', 'macos-latest', 'windows-latest']"
+#         extensions: "ctype, iconv, json, mbstring"
+
+on:
+  workflow_call:
+    inputs:
+      php-versions:
+        description: 'JSON array of PHP versions to test against.'
+        type: string
+        default: "['8.5']"
+      os:
+        description: 'JSON array of runner operating systems.'
+        type: string
+        default: "['ubuntu-latest', 'macos-latest', 'windows-latest']"
+      extensions:
+        description: 'Comma-separated PHP extensions to install.'
+        type: string
+        default: 'ctype, iconv, json, mbstring'
+      composer-flags:
+        description: 'Flags passed to composer install.'
+        type: string
+        default: '--prefer-dist --no-progress --no-interaction'
+      test-command:
+        description: 'Command used to run the test suite.'
+        type: string
+        default: 'vendor/bin/phpunit --testdox --no-coverage'
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+        php-versions: ${{ fromJSON(inputs.php-versions) }}
+    name: PHP ${{ matrix.php-versions }} - ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-versions }}
+          extensions: ${{ inputs.extensions }}
+      - name: Install dependencies
+        run: composer install ${{ inputs.composer-flags }}
+      - name: Run test suite
+        run: ${{ inputs.test-command }}

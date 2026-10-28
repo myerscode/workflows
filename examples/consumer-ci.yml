@@ -1,0 +1,39 @@
+# Example consumer workflow.
+#
+# Copy this into a myerscode PHP package as `.github/workflows/ci.yml`.
+# It replaces the per-repo tests.yml / security-audit.yml / codecov.yml with
+# calls to the shared reusable workflows in myerscode/workflows.
+#
+# Pin to a release tag (@v1) so consumers get a stable, versioned contract.
+
+name: CI
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    branches: [ main, develop, feature/** ]
+  pull_request:
+    branches: [ main, develop, feature/** ]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    uses: myerscode/workflows/.github/workflows/php-lint.yml@v1
+
+  tests:
+    uses: myerscode/workflows/.github/workflows/php-tests.yml@v1
+    with:
+      php-versions: "['8.5']"
+      os: "['ubuntu-latest', 'macos-latest', 'windows-latest']"
+      extensions: "ctype, iconv, json, mbstring"
+
+  audit:
+    uses: myerscode/workflows/.github/workflows/php-security-audit.yml@v1
+
+  coverage:
+    uses: myerscode/workflows/.github/workflows/php-coverage.yml@v1
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

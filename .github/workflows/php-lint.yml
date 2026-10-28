@@ -1,0 +1,53 @@
+name: Lint & Analyse (reusable)
+
+# Reusable Pint (lint) + PHPStan (static analysis) workflow.
+#
+#   jobs:
+#     quality:
+#       uses: myerscode/workflows/.github/workflows/php-lint.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        description: 'PHP version to run the tooling under.'
+        type: string
+        default: '8.5'
+      extensions:
+        description: 'Comma-separated PHP extensions to install.'
+        type: string
+        default: 'ctype, iconv, json, mbstring'
+      composer-flags:
+        description: 'Flags passed to composer install.'
+        type: string
+        default: '--prefer-dist --no-progress --no-interaction'
+      lint-command:
+        description: 'Pint command. Use --test to fail without writing changes.'
+        type: string
+        default: 'vendor/bin/pint --test'
+      analyse-command:
+        description: 'PHPStan command.'
+        type: string
+        default: 'vendor/bin/phpstan analyse --no-progress'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    name: Lint & Analyse - PHP ${{ inputs.php-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: ${{ inputs.extensions }}
+      - name: Install dependencies
+        run: composer install ${{ inputs.composer-flags }}
+      - name: Check code style (Pint)
+        run: ${{ inputs.lint-command }}
+      - name: Static analysis (PHPStan)
+        run: ${{ inputs.analyse-command }}

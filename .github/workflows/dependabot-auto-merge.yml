@@ -1,0 +1,104 @@
+name: Dependabot Auto-merge (reusable)
+
+# Reusable workflow that auto-merges Dependabot pull requests once all
+# required status checks pass and the branch is free of conflicts.
+#
+# GitHub completes a `--auto` merge only when branch protection's required
+# checks are green AND the PR has no merge conflicts, so "merge only if there
+# are no conflicts" is enforced by GitHub itself at merge time.
+#
+# Call it from a consumer repo. The caller MUST trigger on pull_request_target
+# so the run has a writable token (Dependabot's own pull_request token is
+# read-only and sees no secrets):
+#
+#   name: Dependabot auto-merge
+#   on:
+#     pull_request_target:
+#   permissions:
+#     contents: write
+#     pull-requests: write
+#   jobs:
+#     automerge:
+#       uses: myerscode/workflows/.github/workflows/dependabot-auto-merge.yml@v1
+#
+# Requirements in the consumer repo:
+#   - Settings > General > "Allow auto-merge" enabled.
+#   - Branch protection on the default branch with required status checks,
+#     otherwise --auto merges immediately with no gate.
+
+on:
+  workflow_call:
+    inputs:
+      merge-method:
+        description: 'Merge method: merge, squash, or rebase.'
+        type: string
+        default: 'squash'
+      highest-auto-merge:
+        description: >-
+          Highest semver bump to auto-merge: patch, minor, or major.
+          patch  -> only patch updates.
+          minor  -> patch and minor updates.
+          major  -> everything (not recommended).
+        type: string
+        default: 'minor'
+      approve:
+        description: 'Whether to also submit an approving review.'
+        type: boolean
+        default: true
+
+# Single-instance guarantee: all Dependabot auto-merge runs for a given repo
+# share one concurrency group and queue rather than cancel, so simultaneously
+# opened Dependabot PRs are processed one at a time and none are dropped.
+concurrency:
+  group: dependabot-auto-merge-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Only ever act on Dependabot's own PRs.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether this update is eligible
+        id: gate
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          HIGHEST: ${{ inputs.highest-auto-merge }}
+        run: |
+          case "$HIGHEST" in
+            patch) allowed="version-update:semver-patch" ;;
+            minor) allowed="version-update:semver-patch version-update:semver-minor" ;;
+            major) allowed="version-update:semver-patch version-update:semver-minor version-update:semver-major" ;;
+            *) echo "Invalid highest-auto-merge: $HIGHEST" >&2; exit 1 ;;
+          esac
+          eligible=false
+          for a in $allowed; do
+            if [ "$UPDATE_TYPE" = "$a" ]; then eligible=true; break; fi
+          done
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "Update type '$UPDATE_TYPE' eligible under '$HIGHEST': $eligible"
+
+      - name: Approve the pull request
+        if: steps.gate.outputs.eligible == 'true' && inputs.approve
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr review --approve "$PR_URL"
+
+      - name: Enable auto-merge
+        if: steps.gate.outputs.eligible == 'true'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          METHOD: ${{ inputs.merge-method }}
+        run: gh pr merge --auto --"$METHOD" "$PR_URL"

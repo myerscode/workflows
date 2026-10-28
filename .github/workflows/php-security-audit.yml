@@ -1,0 +1,46 @@
+name: Security Audit (reusable)
+
+# Reusable Composer security audit for myerscode PHP packages.
+#
+#   jobs:
+#     audit:
+#       uses: myerscode/workflows/.github/workflows/php-security-audit.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        description: 'PHP version to run the audit under.'
+        type: string
+        default: '8.5'
+      extensions:
+        description: 'Comma-separated PHP extensions to install.'
+        type: string
+        default: 'ctype, iconv, json, mbstring'
+      composer-flags:
+        description: 'Flags passed to composer install.'
+        type: string
+        default: '--prefer-dist --no-progress --no-interaction'
+      audit-command:
+        description: 'Command used to run the audit.'
+        type: string
+        default: 'composer audit'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: ${{ inputs.extensions }}
+      - name: Install dependencies
+        run: composer install ${{ inputs.composer-flags }}
+      - name: Run security audit
+        run: ${{ inputs.audit-command }}

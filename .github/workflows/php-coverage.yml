@@ -1,0 +1,65 @@
+name: Code Coverage (reusable)
+
+# Reusable coverage + Codecov upload for myerscode PHP packages.
+# The consumer must pass the Codecov token as a secret:
+#
+#   jobs:
+#     coverage:
+#       uses: myerscode/workflows/.github/workflows/php-coverage.yml@v1
+#       secrets:
+#         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+on:
+  workflow_call:
+    inputs:
+      php-version:
+        description: 'PHP version to generate coverage under.'
+        type: string
+        default: '8.5'
+      extensions:
+        description: 'Comma-separated PHP extensions to install.'
+        type: string
+        default: 'ctype, iconv, json, mbstring'
+      composer-flags:
+        description: 'Flags passed to composer install.'
+        type: string
+        default: '--prefer-dist --no-progress --no-interaction'
+      coverage-command:
+        description: 'Command that produces the clover report.'
+        type: string
+        default: 'vendor/bin/phpunit --testdox --coverage-clover ./coverage.xml'
+      coverage-file:
+        description: 'Path to the clover report uploaded to Codecov.'
+        type: string
+        default: './coverage.xml'
+    secrets:
+      CODECOV_TOKEN:
+        description: 'Codecov upload token.'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    name: Coverage - PHP ${{ inputs.php-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          coverage: xdebug
+          extensions: ${{ inputs.extensions }}
+      - name: Install dependencies
+        run: composer install ${{ inputs.composer-flags }}
+      - name: Run test suite with coverage
+        run: ${{ inputs.coverage-command }}
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ inputs.coverage-file }}
+          verbose: true
