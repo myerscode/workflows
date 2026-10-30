@@ -59,7 +59,7 @@ jobs:
         with:
           ref: ${{ inputs.default-branch }}
           fetch-depth: 0
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT || github.token }}
           persist-credentials: true
 
       - name: Determine version and scheme

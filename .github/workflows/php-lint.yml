@@ -59,7 +59,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          # github.token (not secrets.GITHUB_TOKEN): a reusable workflow that
+          # declares an explicit secrets: block cannot reference
+          # secrets.GITHUB_TOKEN — doing so is a compile-time error that fails
+          # the whole caller run at startup (startup_failure, no annotations).
+          token: ${{ secrets.PAT || github.token }}
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
