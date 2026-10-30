@@ -34,8 +34,8 @@ on:
         default: './coverage.xml'
     secrets:
       CODECOV_TOKEN:
-        description: 'Codecov upload token.'
-        required: true
+        description: 'Codecov upload token. Optional for public repos (Codecov supports tokenless uploads); a required secret that is unset makes the whole caller run fail at startup.'
+        required: false
 
 permissions:
   contents: read
@@ -62,4 +62,5 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ inputs.coverage-file }}
+          fail_ci_if_error: false
           verbose: true
