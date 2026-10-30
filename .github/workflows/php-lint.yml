@@ -48,8 +48,14 @@ on:
         description: 'Optional PAT so the fix commit can trigger downstream workflows.'
         required: false
 
+# contents: read is the default so a consumer's CI caller (fix: false) does not
+# have to grant write just to run the lint/analyse CHECK. A reusable workflow
+# may not request MORE permission than the calling job, so a write default here
+# fails every read-only caller at startup. The fix: true auto-commit path needs
+# write — those (dispatch/scheduled) callers must grant `contents: write` on the
+# job that calls this workflow.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   quality:
@@ -59,7 +65,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          # github.token (not secrets.GITHUB_TOKEN): a reusable workflow that
+          # declares an explicit secrets: block cannot reference
+          # secrets.GITHUB_TOKEN — doing so is a compile-time error that fails
+          # the whole caller run at startup (startup_failure, no annotations).
+          token: ${{ secrets.PAT || github.token }}
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
