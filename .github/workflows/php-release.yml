@@ -46,9 +46,11 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+# Only contents: write is needed — the workflow tags, creates a GitHub release
+# and commits the CHANGELOG; it opens no pull request. Requesting more than the
+# caller's release.yml grants (contents: write) fails the caller at startup.
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   release:
