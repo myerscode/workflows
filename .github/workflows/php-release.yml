@@ -2,7 +2,9 @@ name: PHP Release (reusable)
 
 # Reusable release workflow for myerscode PHP packages: validates the version,
 # tags it, generates a changelog from conventional commits, creates the GitHub
-# release, and commits the updated CHANGELOG back to the default branch.
+# release (changelog embedded as release notes), and lands the updated
+# CHANGELOG.md on the default branch via an auto-merged pull request (the
+# branch forbids direct pushes).
 #
 # Supports CalVer (YYYY.MINOR.PATCH) and SemVer (MAJOR.MINOR.PATCH).
 #
@@ -46,11 +48,12 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
-# Only contents: write is needed — the workflow tags, creates a GitHub release
-# and commits the CHANGELOG; it opens no pull request. Requesting more than the
-# caller's release.yml grants (contents: write) fails the caller at startup.
+# contents: write to tag + create the release; pull-requests: write to open the
+# auto-merged CHANGELOG PR (the default branch forbids direct pushes). The
+# caller's release.yml must grant BOTH.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -154,10 +157,38 @@ jobs:
           useGitmojis: false
           writeToFile: true
 
-      - name: Commit updated CHANGELOG
+      # The default branch forbids direct pushes (org baseline ruleset requires
+      # a pull request), so land the regenerated CHANGELOG via an auto-merged
+      # PR rather than committing straight to the branch.
+      - name: Open CHANGELOG pull request
         if: steps.previous.outputs.found == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v7
+        id: changelog_pr
+        uses: peter-evans/create-pull-request@v7
         with:
-          branch: ${{ inputs.default-branch }}
-          commit_message: "docs: update CHANGELOG for ${{ steps.version.outputs.tag }}"
-          file_pattern: CHANGELOG.md
+          token: ${{ secrets.PAT || github.token }}
+          branch: changelog/${{ steps.version.outputs.tag }}
+          base: ${{ inputs.default-branch }}
+          commit-message: "docs: update CHANGELOG for ${{ steps.version.outputs.tag }}"
+          title: "docs: update CHANGELOG for ${{ steps.version.outputs.tag }}"
+          body: |
+            Automated CHANGELOG update for release `${{ steps.version.outputs.tag }}`.
+
+            Opened by the reusable `php-release` workflow because the default
+            branch requires a pull request (no direct pushes).
+          add-paths: CHANGELOG.md
+          delete-branch: true
+
+      # The GitHub release above already carries the changelog as its release
+      # notes (from the in-memory "Generate changelog" step), so the release is
+      # never missing its changelog. This step only lands the CHANGELOG.md file
+      # into the repo history. The baseline ruleset requires 0 approvals and no
+      # status checks, so merge immediately; fall back to --auto if the repo has
+      # checks that must pass first.
+      - name: Merge the CHANGELOG PR
+        if: steps.previous.outputs.found == 'true' && steps.changelog_pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.PAT || github.token }}
+          PR: ${{ steps.changelog_pr.outputs.pull-request-number }}
+        run: |
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
+            || gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --auto
