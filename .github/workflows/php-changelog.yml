@@ -1,8 +1,16 @@
 name: PHP Changelog (reusable)
 
-# Reusable workflow to (re)generate and commit CHANGELOG.md for a given release
-# version, independent of cutting a release. Mirrors the changelog half of
+# Reusable workflow to (re)generate CHANGELOG.md for a given release version,
+# independent of cutting a release. Mirrors the changelog half of
 # php-release.yml for repos that need to regenerate a changelog after the fact.
+# The default branch forbids direct pushes, so the result lands via an
+# auto-merged pull request.
+#
+# The caller must grant contents: write AND pull-requests: write.
+#
+#   permissions:
+#     contents: write
+#     pull-requests: write
 #
 #   jobs:
 #     changelog:
@@ -20,7 +28,7 @@ on:
         type: string
         required: true
       default-branch:
-        description: 'Branch to read tags from and commit the CHANGELOG to.'
+        description: 'Branch to read tags from and open the CHANGELOG pull request against.'
         type: string
         default: 'main'
       exclude-types:
@@ -29,13 +37,16 @@ on:
         default: 'build,docs,other,style,ci,chore'
     secrets:
       PAT:
-        description: 'Optional PAT so the commit bypasses branch protection / fires downstream workflows.'
+        description: 'Optional PAT so the CHANGELOG pull request fires downstream workflows.'
         required: false
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+# contents: write to push the changelog branch; pull-requests: write to open
+# and merge the CHANGELOG pull request.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update:
@@ -74,10 +85,33 @@ jobs:
           useGitmojis: false
           writeToFile: true
 
-      - name: Commit updated CHANGELOG
+      # Same branch name as php-release, so a pending release changelog PR is
+      # updated rather than duplicated. No PR is opened if nothing changed.
+      - name: Open CHANGELOG pull request
         if: steps.previous.outputs.found == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v7
+        id: changelog_pr
+        uses: peter-evans/create-pull-request@v7
         with:
-          branch: ${{ inputs.default-branch }}
-          commit_message: "docs: update CHANGELOG for ${{ inputs.version }}"
-          file_pattern: CHANGELOG.md
+          token: ${{ secrets.PAT || github.token }}
+          branch: changelog/${{ inputs.version }}
+          base: ${{ inputs.default-branch }}
+          commit-message: "docs: update CHANGELOG for ${{ inputs.version }}"
+          title: "docs: update CHANGELOG for ${{ inputs.version }}"
+          body: |
+            Automated CHANGELOG update for `${{ inputs.version }}`.
+
+            Opened by the reusable `php-changelog` workflow because the default
+            branch requires a pull request (no direct pushes).
+          add-paths: CHANGELOG.md
+          delete-branch: true
+
+      # The baseline ruleset requires 0 approvals and no status checks, so merge
+      # immediately; fall back to --auto if the repo has checks that must pass.
+      - name: Merge the CHANGELOG PR
+        if: steps.previous.outputs.found == 'true' && steps.changelog_pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ secrets.PAT || github.token }}
+          PR: ${{ steps.changelog_pr.outputs.pull-request-number }}
+        run: |
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
+            || gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --auto
