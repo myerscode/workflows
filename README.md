@@ -19,6 +19,7 @@ Write CI once here, call it everywhere. Each workflow is a [reusable workflow](h
 | Compile Assets | `.github/workflows/compile-assets.yml` | npm build + commit compiled assets (for the sites) |
 | PR Hygiene | `.github/workflows/pr-hygiene.yml` | Nudge external draft / non-editable PRs; close uneditable ones |
 | Issue Triage | `.github/workflows/issue-triage.yml` | Comment on issues when a label (e.g. `help wanted`) is applied |
+| Starlight Docs | `.github/workflows/starlight-docs.yml` | Build `docs/` with the Starlight action and deploy to GitHub Pages |
 
 ## Usage
 

@@ -41,6 +41,10 @@ on:
         description: 'Conventional-commit types excluded from the changelog.'
         type: string
         default: 'build,docs,other,style,ci,chore'
+      move-major-tag:
+        description: 'SemVer only: also force-move the floating major tag (e.g. v1) to this release.'
+        type: boolean
+        default: false
     secrets:
       PAT:
         description: 'Optional PAT so release commits bypass branch protection / fire downstream workflows.'
@@ -145,6 +149,18 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           body: ${{ steps.changelog.outputs.changes || 'Initial release' }}
+
+      # Floating major alias (e.g. v1) for consumers pinning `@v1`. The org tag
+      # ruleset excludes major-only tags (refs/tags/v[0-9], v[0-9][0-9]) so this
+      # force-push is allowed; exact version tags stay immutable.
+      - name: Move major tag
+        if: inputs.move-major-tag && steps.version.outputs.scheme == 'semver'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          MAJOR="v${TAG%%.*}"
+          git tag -f "$MAJOR" "${TAG}^{commit}"
+          git push -f origin "refs/tags/${MAJOR}"
 
       - name: Write changelog to file
         if: steps.previous.outputs.found == 'true'
