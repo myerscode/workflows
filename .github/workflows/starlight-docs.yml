@@ -1,0 +1,112 @@
+name: Starlight Docs (reusable)
+
+# Builds a repo's Markdown docs with myerscode/starlight-github-pages-action
+# and deploys them to GitHub Pages.
+#
+# The CALLER owns the triggers and MUST grant the three permissions below: a
+# reusable workflow cannot raise the permissions of the workflow that calls it.
+# Example consumer in examples/consumer-starlight-docs.yml.
+#
+#   permissions:
+#     contents: read
+#     pages: write
+#     id-token: write
+#
+#   jobs:
+#     docs:
+#       uses: myerscode/workflows/.github/workflows/starlight-docs.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      site-title:
+        description: 'Site title. Defaults to the repository name.'
+        type: string
+        default: ''
+      content-dir:
+        description: 'Directory containing the Markdown content.'
+        type: string
+        default: 'docs'
+      site-description:
+        description: 'Description for SEO and metadata.'
+        type: string
+        default: 'Documentation site built with Starlight'
+      base-path:
+        type: string
+        default: ''
+      custom-domain:
+        type: string
+        default: ''
+      favicon:
+        type: string
+        default: ''
+      logo:
+        type: string
+        default: ''
+      changelog:
+        description: '"auto", "false", or a path to a changelog file.'
+        type: string
+        default: 'auto'
+      palette:
+        type: string
+        default: ''
+      sidebar:
+        description: 'Sidebar structure as YAML or JSON.'
+        type: string
+        default: ''
+      social:
+        description: 'Social links as YAML or JSON.'
+        type: string
+        default: ''
+      header-links:
+        description: 'Header links as YAML or JSON.'
+        type: string
+        default: ''
+      page-actions:
+        description: 'Page footer actions as YAML or JSON.'
+        type: string
+        default: ''
+    outputs:
+      site-url:
+        description: 'The deployed GitHub Pages URL.'
+        value: ${{ jobs.deploy.outputs.site-url }}
+
+# Only one Pages deploy per repo at a time; never cancel one mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.site-url }}
+    outputs:
+      site-url: ${{ steps.deployment.outputs.site-url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build and deploy
+        id: deployment
+        uses: myerscode/starlight-github-pages-action@v1
+        with:
+          site-title: ${{ inputs.site-title || github.event.repository.name }}
+          content-dir: ${{ inputs.content-dir }}
+          site-description: ${{ inputs.site-description }}
+          base-path: ${{ inputs.base-path }}
+          custom-domain: ${{ inputs.custom-domain }}
+          favicon: ${{ inputs.favicon }}
+          logo: ${{ inputs.logo }}
+          changelog: ${{ inputs.changelog }}
+          palette: ${{ inputs.palette }}
+          sidebar: ${{ inputs.sidebar }}
+          social: ${{ inputs.social }}
+          header-links: ${{ inputs.header-links }}
+          page-actions: ${{ inputs.page-actions }}
