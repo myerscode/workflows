@@ -33,5 +33,9 @@ jobs:
     with:
       version: ${{ github.event.inputs.version }}
       scheme: ${{ github.event.inputs.scheme }}
+      # SemVer repos consumed as `@v1`: also move the floating major tag.
+      # move-major-tag: true
     secrets:
       PAT: ${{ secrets.PAT }}
+      # SemVer repos consumed as `@v1`: also move the floating major tag.
+      # move-major-tag: true
